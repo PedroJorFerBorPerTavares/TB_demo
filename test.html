@@ -1,0 +1,315 @@
+<!doctype html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="robots" content="noindex,nofollow" />
+  <title>Mini PCB Inspector — Web Demo</title>
+  <style>
+    :root{--bg:#0f1115;--panel:#161920;--ink:#e6e9ef;--muted:#8a90a2;--accent:#6ea8fe}
+    *{box-sizing:border-box} body{margin:0;background:var(--bg);color:var(--ink);font:14px/1.4 system-ui,Segoe UI,Roboto,Helvetica,Arial}
+    header{padding:16px 20px;border-bottom:1px solid #232838;display:flex;gap:16px;align-items:center}
+    header h1{font-size:16px;margin:0;font-weight:600}
+    header .tag{font-size:12px;color:var(--muted);padding:3px 8px;border:1px solid #2a3147;border-radius:999px}
+    main{display:grid;grid-template-columns:340px 1fr;min-height:calc(100vh - 57px)}
+    aside{border-right:1px solid #232838;padding:16px;background:var(--panel)}
+    section{padding:16px}
+    .card{background:#12141a;border:1px solid #232838;border-radius:14px;padding:12px;margin-bottom:12px}
+    .card h3{margin:0 0 8px 0;font-size:13px;color:#b9c0d4}
+    .drop{border:1px dashed #2a3147;border-radius:12px;padding:14px;text-align:center;color:var(--muted)}
+    .drop input{display:none}
+    .drop button{margin-top:8px}
+    .row{display:flex;gap:8px;align-items:center}
+    .row > *{flex:1}
+    label{display:block;margin:8px 0 6px;color:#b9c0d4;font-size:12px}
+    input[type="range"]{width:100%}
+    button{appearance:none;background:#1b2030;border:1px solid #2a3147;color:#dfe5f7;border-radius:10px;padding:8px 10px;cursor:pointer}
+    button:hover{border-color:#3b4566}
+    canvas{background:#0a0c11;border:1px solid #232838;border-radius:12px;width:100%;height:auto;max-height:45vh}
+    .grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}
+    .small{font-size:12px;color:var(--muted)}
+    .pill{border:1px solid #2a3147;border-radius:999px;padding:3px 8px;color:#b9c0d4;font-size:12px}
+    footer{padding:10px 16px;border-top:1px solid #232838;color:#778}
+  </style>
+</head>
+<body>
+  <header>
+    <h1>Mini PCB Inspector — Web Demo</h1>
+    <span class="tag">client-side • OpenCV.js</span>
+    <span class="tag">QR-ready</span>
+  </header>
+
+  <main>
+    <aside>
+      <div class="card">
+        <h3>1) Importer</h3>
+        <div class="drop" id="dropRef">
+          <div>Référence</div>
+          <div class="small">Glisser-déposer ou choisir un fichier</div>
+          <button onclick="pick('ref')">Choisir…</button>
+          <input id="fileRef" type="file" accept="image/*">
+        </div>
+        <div class="drop" id="dropTest" style="margin-top:8px">
+          <div>Image test</div>
+          <div class="small">Glisser-déposer ou choisir un fichier</div>
+          <button onclick="pick('test')">Choisir…</button>
+          <input id="fileTest" type="file" accept="image/*">
+        </div>
+      </div>
+
+      <div class="card">
+        <h3>2) Réglages</h3>
+        <label>Méthode</label>
+        <div class="row">
+          <select id="method">
+            <option value="abs">Différence | |Δ|</option>
+            <option value="z">Z-score (approx.)</option>
+            <option value="fourier">Fourier (magnitude diff)</option>
+          </select>
+          <span class="pill" id="status">prêt</span>
+        </div>
+        <label>Seuil</label>
+        <input id="th" type="range" min="1" max="255" value="30" />
+        <div class="row small"><span>Bas</span><span style="text-align:right">Haut</span></div>
+        <label>Flou gaussien</label>
+        <input id="blur" type="range" min="0" max="7" step="1" value="1" />
+        <div class="row small"><span>0</span><span style="text-align:right">7</span></div>
+        <div class="row" style="margin-top:6px">
+          <label class="row" style="gap:6px"><input type="checkbox" id="edgeMask"/> Masque bords</label>
+          <label class="row" style="gap:6px"><input type="checkbox" id="autoAlign" checked/> ORB align</label>
+        </div>
+        <div class="row" style="margin-top:8px">
+          <button id="runBtn">Lancer</button>
+          <button id="exportBtn">Exporter heatmap</button>
+        </div>
+      </div>
+
+      <div class="card small">
+        <h3>Notes</h3>
+        <ul>
+          <li>Tout se passe <b>dans votre navigateur</b> (aucun upload).</li>
+          <li>“ORB align” = features ORB + homographie + warp.</li>
+          <li>“Z-score (approx.)” = normalisation locale simple (démo).</li>
+          <li>“Fourier” = diff. de spectres log-magnitude.</li>
+        </ul>
+      </div>
+    </aside>
+
+    <section>
+      <div class="grid">
+        <div>
+          <h3 class="small">Référence</h3>
+          <canvas id="cRef"></canvas>
+        </div>
+        <div>
+          <h3 class="small">Test (après alignement si activé)</h3>
+          <canvas id="cTest"></canvas>
+        </div>
+        <div>
+          <h3 class="small">Différence / Carte proba</h3>
+          <canvas id="cDiff"></canvas>
+        </div>
+        <div>
+          <h3 class="small">Heatmap</h3>
+          <canvas id="cHeat"></canvas>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <footer class="small">© 2025 — Demo éducative. Pas d’accès à la caméra industrielle / drivers. Pour un salon, hébergez ce fichier et pointez votre QR dessus.</footer>
+
+  <!-- OpenCV.js (core + features2d). CDN officiel -->
+  <script async src="https://docs.opencv.org/4.x/opencv.js" type="text/javascript"></script>
+  <script>
+    // ---- Helpers UI ----
+    const s = (id)=>document.getElementById(id);
+    function pick(which){ s(which==='ref'? 'fileRef':'fileTest').click(); }
+
+    ;['fileRef','fileTest'].forEach(id=>{
+      const input = s(id);
+      const drop = id==='fileRef'? s('dropRef'):s('dropTest');
+      drop.addEventListener('dragover', e=>{e.preventDefault(); drop.style.borderColor='#3b4566';});
+      drop.addEventListener('dragleave', e=>{drop.style.borderColor='#2a3147';});
+      drop.addEventListener('drop', e=>{e.preventDefault(); input.files = e.dataTransfer.files; input.dispatchEvent(new Event('change')); drop.style.borderColor='#2a3147';});
+    });
+
+    // ---- OpenCV load gate ----
+    let cvReady = false; let refMat=null, testMat=null;
+    function onOpenCvReady(){ cvReady = true; s('status').textContent='OpenCV OK'; }
+    window.Module = { onRuntimeInitialized: onOpenCvReady };
+
+    // ---- Load image into Mat ----
+    async function fileToMat(file){
+      const img = new Image(); img.crossOrigin='anonymous';
+      const url = URL.createObjectURL(file); img.src = url; await img.decode();
+      const c = document.createElement('canvas'); c.width=img.naturalWidth; c.height=img.naturalHeight;
+      const ctx = c.getContext('2d'); ctx.drawImage(img,0,0);
+      const src = cv.imread(c); // RGBA
+      const out = new cv.Mat(); cv.cvtColor(src, out, cv.COLOR_RGBA2GRAY);
+      src.delete(); URL.revokeObjectURL(url); return out;
+    }
+
+    // ---- Render Mat to canvas (auto fit) ----
+    function drawMatToCanvas(mat, canvas){
+      const maxW = canvas.parentElement.clientWidth; const maxH = Math.round(window.innerHeight*0.45);
+      const scale = Math.min(maxW / mat.cols, maxH / mat.rows, 1);
+      canvas.width = Math.round(mat.cols * scale); canvas.height = Math.round(mat.rows * scale);
+      const tmp = new cv.Mat(); cv.resize(mat, tmp, new cv.Size(canvas.width, canvas.height));
+      cv.imshow(canvas, tmp); tmp.delete();
+    }
+
+    // ---- Feature align (ORB + Homography) ----
+    function alignORB(grayRef, grayTest){
+      const orb = new cv.ORB();
+      const kp1=new cv.KeyPointVector(), kp2=new cv.KeyPointVector();
+      const des1=new cv.Mat(), des2=new cv.Mat();
+      orb.detectAndCompute(grayRef, new cv.Mat(), kp1, des1);
+      orb.detectAndCompute(grayTest, new cv.Mat(), kp2, des2);
+      if (des1.empty() || des2.empty()) { kp1.delete(); kp2.delete(); des1.delete(); des2.delete(); orb.delete(); return grayTest.clone(); }
+      const bf = new cv.BFMatcher(cv.NORM_HAMMING, true);
+      const matches = new cv.DMatchVector(); bf.match(des1, des2, matches);
+      // Keep best matches
+      const mArr=[]; for(let i=0;i<matches.size();i++){ mArr.push(matches.get(i)); }
+      mArr.sort((a,b)=>a.distance-b.distance); const keep = Math.max(8, Math.floor(mArr.length*0.25));
+      const pts1=[], pts2=[];
+      for(let i=0;i<keep;i++){
+        const m=mArr[i]; const p1=kp1.get(m.queryIdx).pt; const p2=kp2.get(m.trainIdx).pt; pts1.push(p1.x,p1.y); pts2.push(p2.x,p2.y);
+      }
+      const srcPts=cv.matFromArray(keep,1,cv.CV_32FC2,pts2); // test → ref
+      const dstPts=cv.matFromArray(keep,1,cv.CV_32FC2,pts1);
+      const H = cv.findHomography(srcPts, dstPts, cv.RANSAC, 3.0);
+      const warped = new cv.Mat(); cv.warpPerspective(grayTest, warped, H, new cv.Size(grayRef.cols, grayRef.rows));
+      // cleanup
+      kp1.delete(); kp2.delete(); des1.delete(); des2.delete(); bf.delete(); matches.delete(); srcPts.delete(); dstPts.delete(); H.delete(); orb.delete();
+      return warped;
+    }
+
+    // ---- Edge mask (invert dilated Canny) ----
+    function computeEdgeMask(gray){
+      const blurred=new cv.Mat(); cv.GaussianBlur(gray, blurred, new cv.Size(5,5), 0);
+      const edges=new cv.Mat(); cv.Canny(blurred, edges, 50, 150);
+      const kernel = cv.getStructuringElement(cv.MORPH_RECT, new cv.Size(3,3));
+      const dil = new cv.Mat(); cv.dilate(edges, dil, kernel);
+      const inv = new cv.Mat(); cv.bitwise_not(dil, inv);
+      blurred.delete(); edges.delete(); kernel.delete(); dil.delete();
+      return inv; // 255 in safe zones
+    }
+
+    // ---- Methods ----
+    function diffAbs(a,b, blurK, mask){
+      const g1=a, g2=b; const d=new cv.Mat(); cv.absdiff(g1,g2,d);
+      if(blurK>0){ const k=blurK%2? blurK: blurK+1; cv.GaussianBlur(d,d,new cv.Size(k,k),0); }
+      if(mask){ cv.bitwise_and(d, mask, d); }
+      return d;
+    }
+
+    function diffZScore(a,b, blurK, mask){
+      // very light approx: normalize local contrast using CLAHE on both, then absdiff
+      const clahe = new cv.CLAHE(2.0, new cv.Size(8,8));
+      const na=new cv.Mat(), nb=new cv.Mat(); clahe.apply(a,na); clahe.apply(b,nb);
+      clahe.delete();
+      const d=diffAbs(na,nb, blurK, mask); na.delete(); nb.delete();
+      return d;
+    }
+
+    function diffFourier(a,b){
+      // magnitude spectrum difference (demo-scale)
+      function mag(gray){
+        const f32=new cv.Mat(); gray.convertTo(f32, cv.CV_32F);
+        const planes=new cv.MatVector(); planes.push_back(f32); planes.push_back(cv.Mat.zeros(gray.rows,gray.cols,cv.CV_32F));
+        const complex=new cv.Mat(); cv.merge(planes, complex); cv.dft(complex, complex);
+        cv.split(complex, planes);
+        const mag=new cv.Mat(); cv.magnitude(planes.get(0), planes.get(1), mag);
+        cv.add(mag, new cv.Mat(mag.rows,mag.cols,mag.type(), new cv.Scalar(1)), mag); // avoid log(0)
+        cv.log(mag, mag);
+        // shift for visualization isn't needed for diff; normalize
+        cv.normalize(mag, mag, 0, 255, cv.NORM_MINMAX);
+        planes.delete(); complex.delete(); f32.delete();
+        return mag;
+      }
+      const ma=mag(a), mb=mag(b), d=new cv.Mat(); cv.absdiff(ma,mb,d); ma.delete(); mb.delete(); return d;
+    }
+
+    function heatmapFromGray(gray){
+      const out=new cv.Mat(); cv.applyColorMap(gray, out, cv.COLORMAP_JET); return out;
+    }
+
+    function thresholdToBinary(gray, thr){
+      const bin=new cv.Mat(); cv.threshold(gray, bin, thr, 255, cv.THRESH_BINARY); return bin;
+    }
+
+    // ---- Orchestrator ----
+    async function run(){
+      if(!cvReady){ alert('OpenCV.js non prêt'); return; }
+      if(!refMat||!testMat){ alert('Charge une référence et une image test.'); return; }
+
+      s('status').textContent='calcul…';
+      // Clone to keep originals
+      let ref=refMat, tst=testMat; // already gray
+
+      // Align
+      let aligned = s('autoAlign').checked ? alignORB(ref, tst) : tst.clone();
+
+      // Optional edge mask
+      let mask=null; if(s('edgeMask').checked) mask = computeEdgeMask(aligned);
+
+      // Method
+      const blurK = parseInt(s('blur').value,10);
+      const method = s('method').value;
+      let diff=null;
+      if(method==='abs') diff = diffAbs(ref, aligned, blurK, mask);
+      else if(method==='z') diff = diffZScore(ref, aligned, blurK, mask);
+      else diff = diffFourier(ref, aligned);
+
+      // Display
+      drawMatToCanvas(ref, s('cRef'));
+      drawMatToCanvas(aligned, s('cTest'));
+
+      // Normalize diff for UI
+      const diff8=new cv.Mat(); cv.normalize(diff, diff8, 0, 255, cv.NORM_MINMAX); diff8.convertTo(diff8, cv.CV_8U);
+      drawMatToCanvas(diff8, s('cDiff'));
+
+      // Threshold + heatmap
+      const thr = parseInt(s('th').value,10);
+      const bin = thresholdToBinary(diff8, thr);
+      const hmGray = new cv.Mat(); cv.addWeighted(diff8, 1.0, bin, 0.0, 0, hmGray); // just reuse diff8
+      const hm = heatmapFromGray(hmGray);
+      drawMatToCanvas(hm, s('cHeat'));
+
+      // Save for export
+      window.__lastHeatmap = hm.clone();
+
+      // Cleanup temps
+      aligned.delete(); diff.delete(); diff8.delete(); bin.delete(); hmGray.delete(); if(mask) mask.delete();
+
+      s('status').textContent='ok';
+    }
+
+    // ---- Export ----
+    function exportHeatmap(){
+      const hm = window.__lastHeatmap; if(!hm){ alert('Pas de heatmap à exporter.'); return; }
+      const c=document.createElement('canvas'); c.width=hm.cols; c.height=hm.rows; cv.imshow(c, hm);
+      const a=document.createElement('a'); a.href=c.toDataURL('image/png'); a.download='heatmap.png'; a.click();
+    }
+
+    // ---- Events ----
+    s('fileRef').addEventListener('change', async e=>{ if(!e.target.files[0]) return; if(!cvReady){alert('OpenCV.js non prêt');return;} refMat?.delete?.(); refMat = await fileToMat(e.target.files[0]); drawMatToCanvas(refMat, s('cRef')); });
+    s('fileTest').addEventListener('change', async e=>{ if(!e.target.files[0]) return; if(!cvReady){alert('OpenCV.js non prêt');return;} testMat?.delete?.(); testMat = await fileToMat(e.target.files[0]); drawMatToCanvas(testMat, s('cTest')); });
+    s('runBtn').addEventListener('click', run);
+    s('th').addEventListener('input', ()=>{ if(window.__lastHeatmap) run(); });
+    s('blur').addEventListener('input', ()=>{ if(window.__lastHeatmap) run(); });
+    s('method').addEventListener('change', ()=>{ if(window.__lastHeatmap) run(); });
+    s('edgeMask').addEventListener('change', ()=>{ if(window.__lastHeatmap) run(); });
+    s('autoAlign').addEventListener('change', ()=>{ if(window.__lastHeatmap) run(); });
+    s('exportBtn').addEventListener('click', exportHeatmap);
+
+    // Resize redraw (optional)
+    window.addEventListener('resize', ()=>{
+      if(refMat) drawMatToCanvas(refMat, s('cRef'));
+      if(testMat) drawMatToCanvas(testMat, s('cTest'));
+      if(window.__lastHeatmap) drawMatToCanvas(window.__lastHeatmap, s('cHeat'));
+    });
+  </script>
+</body>
+</html>
